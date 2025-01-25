@@ -1,13 +1,30 @@
-use crate::agent::SolAgent;
-use mpl_token_metadata::accounts::Metadata;
-use mpl_token_metadata::instructions::{CreateV1, CreateV1InstructionArgs};
-use mpl_token_metadata::types::{PrintSupply, TokenStandard};
+// Copyright 2025 zTgx
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{primitives::token::DeployedData, SolanaAgentKit};
+use mpl_token_metadata::{
+    accounts::Metadata,
+    instructions::{CreateV1, CreateV1InstructionArgs},
+    types::{PrintSupply, TokenStandard},
+};
 use solana_client::client_error::ClientError;
-use solana_sdk::program_pack::Pack;
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, Signer};
-use solana_sdk::{commitment_config::CommitmentConfig, transaction::Transaction};
-use solana_sdk::{system_instruction, system_program};
+use solana_sdk::{
+    program_pack::Pack,
+    signature::{Keypair, Signer},
+    system_instruction, system_program,
+    {commitment_config::CommitmentConfig, transaction::Transaction},
+};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::instruction as spl_token_instruction;
 
@@ -15,7 +32,7 @@ use spl_token::instruction as spl_token_instruction;
 ///
 /// # Parameters
 ///
-/// - `agent`: An instance of `SolanaAgent`.
+/// - `agent`: An instance of `SolanaAgentKit`.
 /// - `name`: Name of the token.
 /// - `uri`: URI for the token metadata.
 /// - `symbol`: Symbol of the token.
@@ -26,20 +43,18 @@ use spl_token::instruction as spl_token_instruction;
 ///
 /// An object containing the token mint address.
 pub async fn deploy_token(
-    agent: &SolAgent,
+    agent: &SolanaAgentKit,
     name: String,
     uri: String,
     symbol: String,
     decimals: u8,
     initial_supply: Option<u64>,
-) -> Result<Pubkey, ClientError> {
+) -> Result<DeployedData, ClientError> {
     let mint = Keypair::new();
     let mint_pubkey = mint.pubkey();
 
     // Create token mint account
-    let min_rent = agent
-        .connection
-        .get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)?;
+    let min_rent = agent.connection.get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)?;
 
     let create_mint_account_ix = system_instruction::create_account(
         &agent.wallet.address,
@@ -92,15 +107,10 @@ pub async fn deploy_token(
     };
     let create_metadata_ix = create_ix.instruction(args);
 
-    let mut instructions = vec![
-        create_mint_account_ix,
-        initialize_mint_ix,
-        create_metadata_ix,
-    ];
+    let mut instructions = vec![create_mint_account_ix, initialize_mint_ix, create_metadata_ix];
 
     if let Some(supply) = initial_supply {
-        let associated_token_account =
-            get_associated_token_address(&agent.wallet.address, &mint_pubkey);
+        let associated_token_account = get_associated_token_address(&agent.wallet.address, &mint_pubkey);
 
         let create_associated_token_account_ix =
             spl_associated_token_account::instruction::create_associated_token_account(
@@ -132,16 +142,11 @@ pub async fn deploy_token(
         recent_blockhash,
     );
 
-    agent
-        .connection
-        .send_and_confirm_transaction_with_spinner_and_config(
-            &transaction,
-            CommitmentConfig::finalized(),
-            solana_client::rpc_config::RpcSendTransactionConfig {
-                skip_preflight: true,
-                ..Default::default()
-            },
-        )?;
+    let signature = agent.connection.send_and_confirm_transaction_with_spinner_and_config(
+        &transaction,
+        CommitmentConfig::finalized(),
+        solana_client::rpc_config::RpcSendTransactionConfig { skip_preflight: true, ..Default::default() },
+    )?;
 
-    Ok(mint_pubkey)
+    Ok(DeployedData::new(mint_pubkey.to_string(), signature.to_string()))
 }

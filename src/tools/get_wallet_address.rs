@@ -1,5 +1,18 @@
-use crate::actions::get_wallet_address;
-use crate::agent::SolAgent;
+// Copyright 2025 zTgx
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{actions::get_wallet_address, SolanaAgentKit};
 use rig::{
     completion::ToolDefinition,
     tool::{Tool, ToolEmbedding},
@@ -20,11 +33,11 @@ pub struct GetWalletAddressOutput {
 pub struct GetWalletAddressError;
 
 pub struct GetWalletAddress {
-    agent: Arc<SolAgent>,
+    agent: Arc<SolanaAgentKit>,
 }
 
 impl GetWalletAddress {
-    pub fn new(agent: Arc<SolAgent>) -> Self {
+    pub fn new(agent: Arc<SolanaAgentKit>) -> Self {
         GetWalletAddress { agent }
     }
 }
@@ -39,7 +52,23 @@ impl Tool for GetWalletAddress {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "get_wallet_address".to_string(),
-            description: r#"Get wallet address of the agent"#.to_string(),
+            description: r#"
+            Get wallet address of the agent".to_string(),
+            
+            examples: [
+                [
+                    {
+                        input: {},
+                        output: {
+                            status: "success",
+                            address: "0x1234567890abcdef",
+                        },
+                        explanation: "The agent's wallet address is 0x1234567890abcdef",
+                    },
+                ],
+            ]
+            "#
+            .to_string(),
             parameters: serde_json::Value::Null,
         }
     }
@@ -58,7 +87,7 @@ pub struct InitError;
 impl ToolEmbedding for GetWalletAddress {
     type InitError = InitError;
     type Context = ();
-    type State = Arc<SolAgent>;
+    type State = Arc<SolanaAgentKit>;
 
     fn init(_state: Self::State, _context: Self::Context) -> Result<Self, Self::InitError> {
         Ok(GetWalletAddress { agent: _state })

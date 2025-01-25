@@ -1,48 +1,56 @@
-use crate::agent::SolAgent;
-use crate::primitives::token::NftMetadata;
-use mpl_token_metadata::instructions::{
-    CreateMasterEditionV3, CreateMetadataAccountV3, CreateMetadataAccountV3InstructionArgs,
+// Copyright 2025 zTgx
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{
+    primitives::token::{DeployedData, NFTMetadata},
+    SolanaAgentKit,
 };
-use mpl_token_metadata::types::DataV2;
+use mpl_token_metadata::{
+    instructions::{CreateMasterEditionV3, CreateMetadataAccountV3, CreateMetadataAccountV3InstructionArgs},
+    types::DataV2,
+};
 use solana_client::client_error::ClientError;
-use solana_sdk::program_pack::Pack;
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, Signer};
-use solana_sdk::transaction::Transaction;
-use solana_sdk::{system_instruction, sysvar};
+use solana_sdk::{
+    program_pack::Pack,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    system_instruction, sysvar,
+    transaction::Transaction,
+};
 use spl_associated_token_account::instruction::create_associated_token_account;
 
 /// Deploys a new NFT collection.
 ///
 /// # Parameters
 ///
-/// - `agent`: An instance of `SolAgent`.
+/// - `agent`: An instance of `SolanaAgentKit`.
 /// - `options`: Collection options including name, URI, royalties, and creators.
 ///
 /// # Returns
 ///
 /// An object containing the collection address and metadata.
-pub async fn deploy_collection(
-    agent: &SolAgent,
-    options: &NftMetadata,
-) -> Result<(String, String), ClientError> {
+pub async fn deploy_collection(agent: &SolanaAgentKit, options: &NFTMetadata) -> Result<DeployedData, ClientError> {
     // Create a new mint for the collection
     let collection_mint = Keypair::new();
     let collection_mint_pubkey = collection_mint.pubkey();
 
     // Create token mint account
-    let min_rent = agent
-        .connection
-        .get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)?;
+    let min_rent = agent.connection.get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)?;
 
     // Create metadata account
-    let metadata_seeds = &[
-        "metadata".as_bytes(),
-        mpl_token_metadata::ID.as_ref(),
-        collection_mint_pubkey.as_ref(),
-    ];
-    let (metadata_account, _) =
-        Pubkey::find_program_address(metadata_seeds, &mpl_token_metadata::ID);
+    let metadata_seeds = &["metadata".as_bytes(), mpl_token_metadata::ID.as_ref(), collection_mint_pubkey.as_ref()];
+    let (metadata_account, _) = Pubkey::find_program_address(metadata_seeds, &mpl_token_metadata::ID);
 
     // Create master edition account
     let master_edition_seeds = &[
@@ -51,14 +59,11 @@ pub async fn deploy_collection(
         collection_mint_pubkey.as_ref(),
         "edition".as_bytes(),
     ];
-    let (master_edition_account, _) =
-        Pubkey::find_program_address(master_edition_seeds, &mpl_token_metadata::ID);
+    let (master_edition_account, _) = Pubkey::find_program_address(master_edition_seeds, &mpl_token_metadata::ID);
 
     // Create associated token account for the mint
-    let associated_token_account = spl_associated_token_account::get_associated_token_address(
-        &agent.wallet.address,
-        &collection_mint_pubkey,
-    );
+    let associated_token_account =
+        spl_associated_token_account::get_associated_token_address(&agent.wallet.address, &collection_mint_pubkey);
 
     // let create_mint_account_ix = system_instruction::create_account(
     //     &agent.wallet.address,
@@ -132,11 +137,7 @@ pub async fn deploy_collection(
         system_program: solana_program::system_program::id(),
         rent: Some(sysvar::rent::id()),
     }
-    .instruction(
-        mpl_token_metadata::instructions::CreateMasterEditionV3InstructionArgs {
-            max_supply: Some(0),
-        },
-    ); // Max supply, 0 means unlimited
+    .instruction(mpl_token_metadata::instructions::CreateMasterEditionV3InstructionArgs { max_supply: Some(0) }); // Max supply, 0 means unlimited
 
     // Create mint account
     let create_mint_account_ix = system_instruction::create_account(
@@ -151,8 +152,8 @@ pub async fn deploy_collection(
     let init_mint_ix = spl_token::instruction::initialize_mint(
         &spl_token::id(),
         &collection_mint.pubkey(),
-        &&agent.wallet.address,
-        Some(&&agent.wallet.address),
+        &agent.wallet.address,
+        Some(&agent.wallet.address),
         0,
     )
     .unwrap();
@@ -168,14 +169,12 @@ pub async fn deploy_collection(
             create_metadata_ix,
             create_master_edition_ix,
         ],
-        Some(&&agent.wallet.address),
+        Some(&agent.wallet.address),
         &[&agent.wallet.wallet, &collection_mint],
         recent_blockhash,
     );
 
-    let signature = agent
-        .connection
-        .send_and_confirm_transaction(&transaction)?;
+    let signature = agent.connection.send_and_confirm_transaction(&transaction)?;
 
-    Ok((collection_mint_pubkey.to_string(), signature.to_string()))
+    Ok(DeployedData::new(collection_mint_pubkey.to_string(), signature.to_string()))
 }
